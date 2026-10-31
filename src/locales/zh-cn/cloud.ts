@@ -268,7 +268,7 @@ export default {
         SelectSource: "请选择本地源...",
         SearchPublished: "搜索已发布的翻译 (插件 ID 或标题)...",
         ReadmeEdit: "可支持标准的 Markdown 语法...",
-        SearchRepo: "搜索仓库、作者或描述...",
+        SearchRepo: "搜索仓库、作者、插件名或描述...",
         Repo: "GitHub 仓库 (owner/repo)",
         SearchPlugins: "快捷搜索当前列表...",
         SearchDiff: "搜索差异记录..."

@@ -17,6 +17,8 @@ export interface PluginTranslationV1 {
         ast: PluginTranslationV1Ast[];
         regex: PluginTranslationV1Regex[];
     }>;
+    // 批量正则提取规则 (每项为一条表达式, 便于后续复用)
+    extractRegex?: string[];
 }
 
 export interface PluginTranslationV1Metadata {

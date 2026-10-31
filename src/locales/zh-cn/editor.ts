@@ -107,6 +107,13 @@ export default {
         Translated: "已处理项",
         Untranslated: "待处理项",
         AddRule: "新增正则规则",
+        BatchExtract: "正则批量提取",
+        BatchExtractPlaceholder: "请输入正则表达式，每行一个",
+        BatchExtractAction: "提取",
+        BatchExtractEmpty: "未提取到匹配条目",
+        BatchExtractSuccess: "提取完成，新增 {{count}} 个条目",
+        BatchExtractDuplicate: "其中 {{count}} 个条目重复出现，已用浅红色标记",
+        InvalidRegex: "正则表达式无效",
         InputRegexPlaceholder: "输入正则表达式",
         InputTargetPlaceholder: "输入替换目标",
         DefaultPlaceholder: "默认为原文: {{source}}"

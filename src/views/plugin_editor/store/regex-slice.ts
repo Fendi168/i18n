@@ -4,9 +4,19 @@ import { RegexItem, RegexStore, RegexSlice } from '../types';
 
 export const createRegexSlice: StateCreator<RegexStore, [], [], RegexSlice> = (set) => ({
     regexItems: [],
+    duplicateSources: [],
+    extractPatterns: [],
 
     setRegexItems: (items: RegexItem[]) => {
         set({ regexItems: items });
+    },
+
+    setDuplicateSources: (sources: string[]) => {
+        set({ duplicateSources: sources });
+    },
+
+    setExtractPatterns: (patterns: string[]) => {
+        set({ extractPatterns: patterns });
     },
 
     addRegexItem: (newItem: RegexItem) => {

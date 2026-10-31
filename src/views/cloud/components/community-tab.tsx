@@ -40,9 +40,14 @@ export const CommunityTab: React.FC = () => {
     const fetchCommunityRegistry = useCloudStore.use.fetchCommunityRegistry();
     const setCurrentTab = useCloudStore.use.setCurrentTab();
     const setTargetRepoAddress = useCloudStore.use.setTargetRepoAddress();
+    const repoPluginNames = useCloudStore.use.repoPluginNames();
+    const setRepoPluginNames = useCloudStore.use.setRepoPluginNames();
 
     const [searchQuery, setSearchQuery] = useState('');
     const [filterLanguage, setFilterLanguage] = useState('all');
+    // 插件名索引加载状态（搜索时按需拉取各仓库的 metadata.json）
+    const [pluginIndexLoading, setPluginIndexLoading] = useState(false);
+    const pluginIndexRunningRef = useRef(false);
 
     // 排行榜折叠状态
     const [reposOpen, setReposOpen] = useState(true);
@@ -136,6 +141,50 @@ export const CommunityTab: React.FC = () => {
             .slice(0, 5) as LeaderboardRepo[];
     }, [communityRegistry, communityStats]);
 
+    // 输入关键词后按需构建「仓库 -> 插件名」索引，用于通过插件名称搜索仓库
+    useEffect(() => {
+        if (!searchQuery.trim() || pluginIndexRunningRef.current) return;
+
+        const pending = communityRegistry
+            .map((item) => item.repoAddress)
+            .filter((address) => !repoPluginNames[address]);
+        if (pending.length === 0) return;
+
+        pluginIndexRunningRef.current = true;
+        setPluginIndexLoading(true);
+
+        const concurrency = 4;
+        let cursor = 0;
+
+        const worker = async () => {
+            while (cursor < pending.length) {
+                const address = pending[cursor++];
+                const [owner, repo] = address.split('/');
+                if (!owner || !repo) continue;
+                try {
+                    const res = await i18n.api.github.getFileContentWithFallback(owner, repo, 'metadata.json');
+                    const raw = typeof res.data === 'string' ? JSON.parse(res.data) : res.data;
+                    if (res.state && Array.isArray(raw)) {
+                        const names = new Set<string>();
+                        for (const entry of raw) {
+                            if (typeof entry?.plugin === 'string' && entry.plugin) names.add(entry.plugin.toLowerCase());
+                            if (typeof entry?.title === 'string' && entry.title) names.add(entry.title.toLowerCase());
+                        }
+                        setRepoPluginNames({ [address]: Array.from(names) });
+                    }
+                } catch (e) {
+                    console.warn(`Failed to index plugin names for ${address}`, e);
+                }
+            }
+        };
+
+        Promise.all(Array.from({ length: Math.min(concurrency, pending.length) }, () => worker()))
+            .finally(() => {
+                pluginIndexRunningRef.current = false;
+                setPluginIndexLoading(false);
+            });
+    }, [searchQuery, communityRegistry, repoPluginNames, setRepoPluginNames, i18n]);
+
     // 过滤逻辑
     const filteredItems = useMemo(() => {
         return communityRegistry
@@ -148,7 +197,9 @@ export const CommunityTab: React.FC = () => {
                     const matchAddress = item.repoAddress.toLowerCase().includes(q);
                     const matchDesc = stats?.description?.toLowerCase().includes(q) || false;
                     const matchAuthor = stats?.authorName?.toLowerCase().includes(q) || false;
-                    if (!matchAddress && !matchDesc && !matchAuthor) return false;
+                    // 按插件名称（或插件 ID）匹配仓库
+                    const matchPlugin = repoPluginNames[item.repoAddress]?.some((name) => name.includes(q)) || false;
+                    if (!matchAddress && !matchDesc && !matchAuthor && !matchPlugin) return false;
                 }
 
                 // 语言过滤
@@ -183,7 +234,7 @@ export const CommunityTab: React.FC = () => {
                 // 3. 最后按活跃度降序
                 return (statsB?.activityScore || 0) - (statsA?.activityScore || 0);
             });
-    }, [communityRegistry, communityStats, searchQuery, filterLanguage]);
+    }, [communityRegistry, communityStats, searchQuery, filterLanguage, repoPluginNames]);
 
 
 
@@ -647,8 +698,11 @@ export const CommunityTab: React.FC = () => {
                                 placeholder={t_i18n('Cloud.Placeholders.SearchRepo')}
                                 value={searchQuery}
                                 onChange={(e) => setSearchQuery(e.target.value)}
-                                className="pl-8 h-8 text-[11px] bg-muted/20 border-border/40 focus:border-primary/40 focus:ring-1 focus:ring-primary/20 shadow-sm transition-all"
+                                className="pl-8 pr-7 h-8 text-[11px] bg-muted/20 border-border/40 focus:border-primary/40 focus:ring-1 focus:ring-primary/20 shadow-sm transition-all"
                             />
+                            {pluginIndexLoading && (
+                                <RefreshCw className="absolute right-2 top-1/2 -translate-y-1/2 w-3 h-3 animate-spin text-muted-foreground/60" />
+                            )}
                         </div>
 
                         {/* 语言过滤 */}

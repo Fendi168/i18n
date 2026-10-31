@@ -44,6 +44,9 @@ interface CloudState {
     savedRepos: string[];
     targetRepoReadme: string | null;
 
+    // ===== 社区插件名索引（用于通过插件名称搜索仓库）=====
+    repoPluginNames: Record<string, string[]>;
+
     // ===== 上传页状态 =====
     uploadForm: UploadFormData;
     uploadType: 'plugin' | 'theme';
@@ -111,6 +114,7 @@ interface CloudActions {
     setTargetRepoStars: (stars: number | null) => void;
     setTargetManifest: (manifest: ManifestEntry[]) => void;
     setSavedRepos: (repos: string[]) => void;
+    setRepoPluginNames: (names: Record<string, string[]>) => void;
     setTargetRepoReadme: (content: string | null) => void;
     addSavedRepo: (address: string) => void;
     removeSavedRepo: (address: string) => void;
@@ -202,6 +206,7 @@ const initialState: CloudState = {
     targetManifest: [],
     savedRepos: [],
     targetRepoReadme: null,
+    repoPluginNames: {},
 
     uploadType: 'plugin',
     uploadForm: {
@@ -276,6 +281,7 @@ const useCloudStoreBase = create<CloudState & CloudActions>()((set, get) => ({
     setTargetManifest: (targetManifest) => set({ targetManifest }),
     setTargetRepoReadme: (targetRepoReadme) => set({ targetRepoReadme }),
     setSavedRepos: (savedRepos) => set({ savedRepos }),
+    setRepoPluginNames: (names) => set((state) => ({ repoPluginNames: { ...state.repoPluginNames, ...names } })),
     addSavedRepo: (address) => set((state) => ({ savedRepos: Array.from(new Set([...state.savedRepos, address])) })),
     removeSavedRepo: (address) => set((state) => ({ savedRepos: state.savedRepos.filter(a => a !== address) })),
 

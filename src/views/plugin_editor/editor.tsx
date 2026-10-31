@@ -63,6 +63,7 @@ const SaveButton: React.FC<{ onSave: () => void; isSaving: boolean }> = React.me
 const AutoSaveManager: React.FC<{ onSave: (silent?: boolean) => void, enabled: boolean }> = ({ onSave, enabled }) => {
     const astItems = useRegexStore.use.astItems();
     const regexItems = useRegexStore.use.regexItems();
+    const extractPatterns = useRegexStore.use.extractPatterns();
     const timerRef = useRef<NodeJS.Timeout | null>(null);
     const firstRenderRef = useRef(true);
 
@@ -86,7 +87,7 @@ const AutoSaveManager: React.FC<{ onSave: (silent?: boolean) => void, enabled: b
         return () => {
             if (timerRef.current) clearTimeout(timerRef.current);
         };
-    }, [astItems, regexItems, enabled, onSave]);
+    }, [astItems, regexItems, extractPatterns, enabled, onSave]);
 
     return null;
 };
@@ -111,10 +112,12 @@ const ReactEditor: React.FC<EditorProps> = (_) => {
 
     // 只获取 setter 函数（稳定引用），不订阅实际数据
     const setRegexItems = useRegexStore.use.setRegexItems();
+    const setDuplicateSources = useRegexStore.use.setDuplicateSources();
     const setAstItems = useRegexStore.use.setAstItems();
     const setMetadata = useRegexStore.use.setMetadata();
     const setDictData = useRegexStore.use.setDictData();
     const setCurrentFile = useRegexStore.use.setCurrentFile();
+    const setExtractPatterns = useRegexStore.use.setExtractPatterns();
     const addFile = useRegexStore.use.addFile();
     const deleteFile = useRegexStore.use.deleteFile();
 
@@ -154,8 +157,11 @@ const ReactEditor: React.FC<EditorProps> = (_) => {
             setMetadata(pluginTranslation.metadata);
         }
 
+        // 批量正则提取规则初始化 (旧文件可能没有该字段)
+        setExtractPatterns(pluginTranslation?.extractRegex || []);
+
         initializedRef.current = true;
-    }, [pluginTranslation, setDictData, setCurrentFile, setMetadata, logger]);
+    }, [pluginTranslation, setDictData, setCurrentFile, setMetadata, setExtractPatterns, logger]);
 
     // =================================== Function ===================================
     const save = React.useCallback(async (silent = false) => {
@@ -164,7 +170,7 @@ const ReactEditor: React.FC<EditorProps> = (_) => {
         setIsSaving(true);
         try {
             // Direct store access to avoid dependency tracking in useCallback
-            const { regexItems, astItems, metadata, currentFile, syncFileDictInfo } = useRegexStore.getState();
+            const { regexItems, astItems, metadata, currentFile, syncFileDictInfo, extractPatterns } = useRegexStore.getState();
             syncFileDictInfo(currentFile, astItems, regexItems);
 
             const finalDictData = useRegexStore.getState().dictData;
@@ -178,6 +184,8 @@ const ReactEditor: React.FC<EditorProps> = (_) => {
             const newPluginTranslation = JSON.parse(JSON.stringify(pluginTranslation)) as PluginTranslationV1;
             newPluginTranslation.dict = JSON.parse(JSON.stringify(finalDictData));
             if (metadata) { newPluginTranslation.metadata = { ...metadata }; }
+            // 批量正则提取规则随翻译文件一起保存，便于后续复用
+            newPluginTranslation.extractRegex = extractPatterns;
 
             try {
                 if (pluginTranslationPath) {
@@ -313,6 +321,108 @@ const ReactEditor: React.FC<EditorProps> = (_) => {
             notice.error(t('Editor.Errors.SyntaxErrorRegex') + ': ' + e);
         }
     }, [i18n, notice, t, setRegexItems]);
+
+    // ================================================== Batch Extract ==================================================
+    const batchExtractRegex = React.useCallback(async (patterns: string[]) => {
+        // 每行一条表达式，忽略空行
+        const lines = patterns.map(line => line.trim()).filter(line => line !== '');
+        if (lines.length === 0) {
+            notice.info(t('Editor.Regex.BatchExtractEmpty'));
+            return;
+        }
+
+        const regexes: RegExp[] = [];
+        for (const line of lines) {
+            try {
+                regexes.push(new RegExp(line, 'g'));
+            } catch (e) {
+                notice.error(`${t('Editor.Regex.InvalidRegex')}: ${line}`);
+                return;
+            }
+        }
+
+        const { metadata, currentFile, regexItems, sourceCache, setSourceCache } = useRegexStore.getState();
+
+        if (!metadata || !currentFile) {
+            notice.error(t('Editor.Errors.NoMetadata'));
+            return;
+        }
+
+        if (!currentFile.endsWith('.js')) {
+            notice.info(t('Editor.Errors.NotJs'));
+            return;
+        }
+
+        // 1. 获取源码 (内存缓存优先 -> 磁盘 -> 备份)
+        const pluginId = metadata.plugin;
+        let originalCode: string | null = sourceCache[currentFile];
+        if (!originalCode) {
+            const isApplied = !!i18n.stateManager.getPluginState(pluginId)?.isApplied;
+            if (!isApplied) {
+                try {
+                    // @ts-ignore
+                    const manifest = i18n.app.plugins.manifests[pluginId];
+                    if (manifest) {
+                        // @ts-ignore
+                        const basePath = path.normalize(i18n.app.vault.adapter.getBasePath());
+                        const targetFilePath = path.join(basePath, manifest.dir || '', currentFile);
+                        if (fs.existsSync(targetFilePath)) {
+                            originalCode = fs.readFileSync(targetFilePath, 'utf8');
+                        }
+                    }
+                } catch (e) {
+                    console.warn("Failed to read source for batch extract", e);
+                }
+            }
+
+            if (!originalCode) {
+                originalCode = await i18n.backupManager.getBackupContent(pluginId, currentFile);
+            }
+
+            if (originalCode) {
+                setSourceCache(currentFile, originalCode);
+            }
+        }
+
+        if (!originalCode) {
+            notice.error(t('Editor.Errors.NoBackup'));
+            return;
+        }
+
+        // 2. 统计每个匹配条目在源码中出现的次数 (多条规则的结果合并统计)
+        const counts = new Map<string, number>();
+        for (const regex of regexes) {
+            for (const match of originalCode.match(regex) || []) {
+                if (!match || !match.trim()) continue;
+                counts.set(match, (counts.get(match) || 0) + 1);
+            }
+        }
+
+        // 无论是否提取到条目，都将规则写入翻译文件以便后续复用
+        setExtractPatterns(lines);
+
+        if (counts.size === 0) {
+            setDuplicateSources([]);
+            notice.info(t('Editor.Regex.BatchExtractEmpty'));
+            return;
+        }
+
+        // 3. 合并到规则列表 (同一条目只保留一行)
+        const newItems = Array.from(counts.keys()).map(source => ({ source, target: source }));
+        const merged = mergeRegexItems(regexItems, newItems).map((item, index) => ({ ...item, id: index }));
+        setRegexItems(merged);
+
+        // 4. 命中多次的条目记录到 store，表格将以浅红色底纹提醒
+        const duplicates = Array.from(counts.entries())
+            .filter(([, count]) => count > 1)
+            .map(([source]) => source);
+        setDuplicateSources(duplicates);
+
+        notice.success(t('Editor.Regex.BatchExtractSuccess', { count: newItems.length }));
+        if (duplicates.length > 0) {
+            notice.info(t('Editor.Regex.BatchExtractDuplicate', { count: duplicates.length }));
+        }
+    }, [i18n, notice, setDuplicateSources, setExtractPatterns, setRegexItems, t]);
 
     // ================================================== Open File ==================================================
     const handleOpenFile = React.useCallback(async () => {
@@ -1036,6 +1146,7 @@ const ReactEditor: React.FC<EditorProps> = (_) => {
                                 <RegexSidebar
                                     regexController={regexController}
                                     onIncrementalExtract={incrementalExtractRegex}
+                                    onBatchExtract={batchExtractRegex}
                                     onOpenFile={handleOpenFile}
                                     onDiagnose={handleDiagnose}
                                     onUnusedDiagnose={handleUnusedDiagnose}

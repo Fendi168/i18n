@@ -61,6 +61,10 @@ export interface RegexSlice {
     // ========== 基础状态 ==========
     /** 正则项列表 */
     regexItems: RegexItem[];
+    /** 批量提取时命中多次的原文（用于表格浅红色底纹提醒） */
+    duplicateSources: string[];
+    /** 批量正则提取规则（每项一条表达式，会随翻译文件保存） */
+    extractPatterns: string[];
 
     // ========== 条目操作 ==========
     /** 初始化正则项列表 */
@@ -75,6 +79,10 @@ export interface RegexSlice {
     resetRegexItem: (id: number) => void;
     /** 批量更新正则项 */
     updateRegexItems: (items: { id: number; updates: Partial<PluginTranslationV1Regex> }[]) => void;
+    /** 设置批量提取时命中多次的原文 */
+    setDuplicateSources: (sources: string[]) => void;
+    /** 设置批量正则提取规则 */
+    setExtractPatterns: (patterns: string[]) => void;
     /** 删除所有未翻译的正则项 */
     deleteUntranslatedRegexItems: () => void;
 }

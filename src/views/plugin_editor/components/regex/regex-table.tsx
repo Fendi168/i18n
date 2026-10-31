@@ -74,6 +74,7 @@ const TargetCell = React.memo(({
 interface MemoizedRegexRowProps {
     row: any;
     isSelected: boolean;
+    isDuplicate: boolean;
     dataIndex: number;
     errorType?: 'error' | 'unused' | 'security' | null;
 }
@@ -85,7 +86,7 @@ const errorRowStyles: Record<string, string> = {
 };
 
 const MemoizedRegexRowInner = React.forwardRef<HTMLTableRowElement, MemoizedRegexRowProps>(
-    ({ row, isSelected, dataIndex, errorType }, ref) => {
+    ({ row, isSelected, isDuplicate, dataIndex, errorType }, ref) => {
         const errorClass = errorType ? errorRowStyles[errorType] || '' : '';
 
         return (
@@ -93,7 +94,7 @@ const MemoizedRegexRowInner = React.forwardRef<HTMLTableRowElement, MemoizedRege
                 ref={ref}
                 data-index={dataIndex}
                 id={`regex-row-${row.original.id}`}
-                className={`border-b hover:bg-accent/50 ${isSelected ? 'bg-accent' : ''} ${errorClass}`}
+                className={`border-b hover:bg-accent/50 ${isDuplicate ? 'bg-red-500/10' : ''} ${isSelected ? 'bg-accent' : ''} ${errorClass}`}
                 data-state={isSelected ? "selected" : undefined}
             >
                 {row.getVisibleCells().map((cell: any) => (
@@ -112,6 +113,7 @@ MemoizedRegexRowInner.displayName = 'MemoizedRegexRow';
 
 const MemoizedRegexRow = React.memo(MemoizedRegexRowInner, (prev, next) => {
     return prev.isSelected === next.isSelected
+        && prev.isDuplicate === next.isDuplicate
         && prev.row.original === next.row.original
         && prev.errorType === next.errorType;
 });
@@ -121,6 +123,8 @@ export const RegexTable = React.forwardRef<HTMLDivElement, Props>(({ data, editi
     const updateRegexItem = useRegexStore.use.updateRegexItem();
     const deleteRegexItem = useRegexStore.use.deleteRegexItem();
     const resetRegexItem = useRegexStore.use.resetRegexItem();
+    const duplicateSources = useRegexStore.use.duplicateSources();
+    const duplicateSet = useMemo(() => new Set(duplicateSources), [duplicateSources]);
     const parentRef = useRef<HTMLDivElement>(null);
 
     // 诊断错误高亮映射 {id -> errorType}
@@ -276,6 +280,7 @@ export const RegexTable = React.forwardRef<HTMLDivElement, Props>(({ data, editi
                                     dataIndex={virtualRow.index}
                                     row={row}
                                     isSelected={row.original.id === editingId}
+                                    isDuplicate={duplicateSet.has(row.original.source)}
                                     errorType={errorMap.get(row.original.id) || null}
                                 />
                             );

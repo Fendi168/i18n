@@ -26,6 +26,7 @@ interface Props {
     activeTab?: string;
     onTabChange?: (value: string) => void;
     onIncrementalExtract?: () => void;
+    onBatchExtract?: (patterns: string[]) => void;
     onOpenFile?: () => void;
     onDiagnose?: () => void;
     onClearDiagnose?: () => void;
@@ -52,6 +53,7 @@ const RegexSidebar: React.FC<Props> = ({
     activeTab,
     onTabChange,
     onIncrementalExtract,
+    onBatchExtract,
     onOpenFile,
     onDiagnose,
     isDiagnosing,
@@ -135,7 +137,7 @@ const RegexSidebar: React.FC<Props> = ({
                     )}
 
                     {showInsert && (
-                        <RegexInsertCard />
+                        <RegexInsertCard onBatchExtract={onBatchExtract} />
                     )}
 
                     {showQuickActions && (
