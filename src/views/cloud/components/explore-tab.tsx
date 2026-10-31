@@ -48,7 +48,8 @@ export const ExploreTab: React.FC = () => {
     const removeSavedRepo = useCloudStore.use.removeSavedRepo();
 
     const [filterLanguage, setFilterLanguage] = useState('all');
-    const [filterQuery, setFilterQuery] = useState('');
+    const filterQuery = useCloudStore.use.exploreFilterQuery();
+    const setFilterQuery = useCloudStore.use.setExploreFilterQuery();
     const [isFetching, setIsFetching] = useState(false);
     const [downloadingId, setDownloadingId] = useState<string | null>(null);
     const [rightTab, setRightTab] = useState<'plugins' | 'readme' | 'updates'>('plugins');

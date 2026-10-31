@@ -26,6 +26,7 @@ export default {
         StartBackup: "开始备份",
         StartRestore: "开始恢复",
         Download: "下载",
+        SearchInRepo: "搜{{query}}",
         Overwrite: "覆盖切换",
         ClearFilters: "清除所有过滤器",
         CreateNewRepo: "创建新仓库",

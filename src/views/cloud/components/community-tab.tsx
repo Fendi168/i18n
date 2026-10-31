@@ -40,14 +40,14 @@ export const CommunityTab: React.FC = () => {
     const fetchCommunityRegistry = useCloudStore.use.fetchCommunityRegistry();
     const setCurrentTab = useCloudStore.use.setCurrentTab();
     const setTargetRepoAddress = useCloudStore.use.setTargetRepoAddress();
+    const setExploreFilterQuery = useCloudStore.use.setExploreFilterQuery();
     const repoPluginNames = useCloudStore.use.repoPluginNames();
-    const setRepoPluginNames = useCloudStore.use.setRepoPluginNames();
+    const communitySearchQuery = useCloudStore.use.communitySearchQuery();
+    const setCommunitySearchQuery = useCloudStore.use.setCommunitySearchQuery();
+    const pluginIndexLoading = useCloudStore.use.pluginIndexLoading();
+    const ensureRepoPluginNames = useCloudStore.use.ensureRepoPluginNames();
 
-    const [searchQuery, setSearchQuery] = useState('');
     const [filterLanguage, setFilterLanguage] = useState('all');
-    // 插件名索引加载状态（搜索时按需拉取各仓库的 metadata.json）
-    const [pluginIndexLoading, setPluginIndexLoading] = useState(false);
-    const pluginIndexRunningRef = useRef(false);
 
     // 排行榜折叠状态
     const [reposOpen, setReposOpen] = useState(true);
@@ -143,47 +143,10 @@ export const CommunityTab: React.FC = () => {
 
     // 输入关键词后按需构建「仓库 -> 插件名」索引，用于通过插件名称搜索仓库
     useEffect(() => {
-        if (!searchQuery.trim() || pluginIndexRunningRef.current) return;
-
-        const pending = communityRegistry
-            .map((item) => item.repoAddress)
-            .filter((address) => !repoPluginNames[address]);
-        if (pending.length === 0) return;
-
-        pluginIndexRunningRef.current = true;
-        setPluginIndexLoading(true);
-
-        const concurrency = 4;
-        let cursor = 0;
-
-        const worker = async () => {
-            while (cursor < pending.length) {
-                const address = pending[cursor++];
-                const [owner, repo] = address.split('/');
-                if (!owner || !repo) continue;
-                try {
-                    const res = await i18n.api.github.getFileContentWithFallback(owner, repo, 'metadata.json');
-                    const raw = typeof res.data === 'string' ? JSON.parse(res.data) : res.data;
-                    if (res.state && Array.isArray(raw)) {
-                        const names = new Set<string>();
-                        for (const entry of raw) {
-                            if (typeof entry?.plugin === 'string' && entry.plugin) names.add(entry.plugin.toLowerCase());
-                            if (typeof entry?.title === 'string' && entry.title) names.add(entry.title.toLowerCase());
-                        }
-                        setRepoPluginNames({ [address]: Array.from(names) });
-                    }
-                } catch (e) {
-                    console.warn(`Failed to index plugin names for ${address}`, e);
-                }
-            }
-        };
-
-        Promise.all(Array.from({ length: Math.min(concurrency, pending.length) }, () => worker()))
-            .finally(() => {
-                pluginIndexRunningRef.current = false;
-                setPluginIndexLoading(false);
-            });
-    }, [searchQuery, communityRegistry, repoPluginNames, setRepoPluginNames, i18n]);
+        if (communitySearchQuery.trim()) {
+            ensureRepoPluginNames(i18n);
+        }
+    }, [communitySearchQuery, ensureRepoPluginNames, i18n]);
 
     // 过滤逻辑
     const filteredItems = useMemo(() => {
@@ -192,8 +155,8 @@ export const CommunityTab: React.FC = () => {
                 const stats = communityStats?.repos?.[item.repoAddress];
 
                 // 搜索过滤
-                if (searchQuery) {
-                    const q = searchQuery.toLowerCase();
+                if (communitySearchQuery) {
+                    const q = communitySearchQuery.toLowerCase();
                     const matchAddress = item.repoAddress.toLowerCase().includes(q);
                     const matchDesc = stats?.description?.toLowerCase().includes(q) || false;
                     const matchAuthor = stats?.authorName?.toLowerCase().includes(q) || false;
@@ -234,15 +197,16 @@ export const CommunityTab: React.FC = () => {
                 // 3. 最后按活跃度降序
                 return (statsB?.activityScore || 0) - (statsA?.activityScore || 0);
             });
-    }, [communityRegistry, communityStats, searchQuery, filterLanguage, repoPluginNames]);
+    }, [communityRegistry, communityStats, communitySearchQuery, filterLanguage, repoPluginNames]);
 
 
 
 
 
-    // 点击查看仓库
-    const handleViewRepo = useCallback((address: string) => {
+    // 点击查看仓库；query 传入时在仓库资源页同步搜索同样内容
+    const handleViewRepo = useCallback((address: string, query?: string) => {
         setTargetRepoAddress(address);
+        setExploreFilterQuery(query ?? '');
 
         // 自动添加到已保存列表
         const currentSaved = i18n.settings.cloudRepos || [];
@@ -257,7 +221,7 @@ export const CommunityTab: React.FC = () => {
         useCloudStore.getState().setTargetManifest([]);
 
         setCurrentTab('download');
-    }, [setTargetRepoAddress, setCurrentTab, i18n]);
+    }, [setTargetRepoAddress, setExploreFilterQuery, setCurrentTab, i18n]);
 
     const topAuthors = useMemo(() => {
         return communityStats?.leaderboard?.topAuthors || [];
@@ -696,8 +660,8 @@ export const CommunityTab: React.FC = () => {
                             <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground group-focus-within:text-primary transition-colors" />
                             <Input
                                 placeholder={t_i18n('Cloud.Placeholders.SearchRepo')}
-                                value={searchQuery}
-                                onChange={(e) => setSearchQuery(e.target.value)}
+                                value={communitySearchQuery}
+                                onChange={(e) => setCommunitySearchQuery(e.target.value)}
                                 className="pl-8 pr-7 h-8 text-[11px] bg-muted/20 border-border/40 focus:border-primary/40 focus:ring-1 focus:ring-primary/20 shadow-sm transition-all"
                             />
                             {pluginIndexLoading && (
@@ -745,6 +709,7 @@ export const CommunityTab: React.FC = () => {
                     filteredItems={filteredItems}
                     communityStats={communityStats}
                     handleViewRepo={handleViewRepo}
+                    searchQuery={communitySearchQuery.trim()}
                     t={t}
                 />
             </main>
@@ -757,9 +722,13 @@ interface CommunityRepoCardProps {
     item: RegistryItem;
     stats?: CommunityRepoStats;
     onView: () => void;
+    // 当前社区搜索关键词，为空时不显示「搜xxx」
+    searchQuery: string;
+    // 进入仓库资源页并搜索同样内容
+    onSearchInRepo: () => void;
 }
 
-const CommunityRepoCard: React.FC<CommunityRepoCardProps> = ({ item, stats, onView }) => {
+const CommunityRepoCard: React.FC<CommunityRepoCardProps> = ({ item, stats, onView, searchQuery, onSearchInRepo }) => {
     const { t: t_i18n } = useTranslation();
     const [owner, repo] = item.repoAddress.split('/');
 
@@ -871,6 +840,19 @@ const CommunityRepoCard: React.FC<CommunityRepoCardProps> = ({ item, stats, onVi
                     <ArrowRight className="w-3.5 h-3.5" />
                     <span className="uppercase tracking-tight">{t('Cloud.Labels.ExploreThisRepo')}</span>
                 </button>
+                {searchQuery && (
+                    <>
+                        <div className="w-[1px] bg-border/20 my-2" />
+                        <button
+                            onClick={onSearchInRepo}
+                            title={t_i18n('Cloud.Actions.SearchInRepo', { query: searchQuery })}
+                            className="min-w-0 max-w-[45%] px-3 flex items-center justify-center gap-1.5 text-[11px] font-bold text-sky-600 dark:text-sky-400 hover:bg-sky-500/5 transition-all active:scale-95"
+                        >
+                            <Search className="w-3.5 h-3.5 shrink-0" />
+                            <span className="truncate">{t_i18n('Cloud.Actions.SearchInRepo', { query: searchQuery })}</span>
+                        </button>
+                    </>
+                )}
                 <div className="w-[1px] bg-border/20 my-2" />
                 <a
                     href={`https://github.com/${item.repoAddress}`}
@@ -890,7 +872,8 @@ const CommunityRepoCard: React.FC<CommunityRepoCardProps> = ({ item, stats, onVi
 interface CommunityReposListProps {
     filteredItems: RegistryItem[];
     communityStats: any;
-    handleViewRepo: (address: string) => void;
+    handleViewRepo: (address: string, query?: string) => void;
+    searchQuery: string;
     t: any;
 }
 
@@ -898,6 +881,7 @@ const CommunityReposList: React.FC<CommunityReposListProps> = ({
     filteredItems,
     communityStats,
     handleViewRepo,
+    searchQuery,
     t
 }) => {
     const parentRef = useRef<HTMLDivElement>(null);
@@ -977,6 +961,8 @@ const CommunityReposList: React.FC<CommunityReposListProps> = ({
                                             item={item}
                                             stats={communityStats?.repos?.[item.repoAddress]}
                                             onView={() => handleViewRepo(item.repoAddress)}
+                                            searchQuery={searchQuery}
+                                            onSearchInRepo={() => handleViewRepo(item.repoAddress, searchQuery)}
                                         />
                                     ))}
                                 </div>

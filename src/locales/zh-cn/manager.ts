@@ -97,7 +97,9 @@ export default {
             Auto: "自动",
             Admin: "管理",
             Mtime: "最后更新",
-            SupportVer: "支持版本"
+            SupportVer: "支持版本",
+            CloudAvailable: "云端有译文",
+            CloudAvailableHint: "点击该行前往云端译文中心搜索该插件"
         },
         Status: {
             NoPlugins: "未发现插件",

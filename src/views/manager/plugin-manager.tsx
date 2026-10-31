@@ -11,6 +11,8 @@ import { PluginTranslationV1 } from 'src/types';
 import { formatTimestamp, isValidPluginTranslationV1Format, i18nOpen } from '../../utils';
 import { loadTranslationFile } from '../../manager/io-manager';
 import { useGlobalStoreInstance } from '~/utils';
+import { useCloudStore } from '../cloud/cloud-store';
+import { CLOUD_VIEW_TYPE } from '../cloud';
 
 import {
     Button,
@@ -78,6 +80,30 @@ export const PluginManager: React.FC<PluginManagerProps> = ({ i18n, close }) => 
 
     // 监听全局源变?
     const sourceTick = useGlobalStoreInstance((state) => state.sourceUpdateTick);
+
+    // 社区插件名索引：用于判断插件云端是否有译文 / 按插件名跳转云端译文中心
+    const repoPluginNames = useCloudStore.use.repoPluginNames();
+    const ensureRepoPluginNames = useCloudStore.use.ensureRepoPluginNames();
+
+    useEffect(() => {
+        ensureRepoPluginNames(i18n);
+    }, [ensureRepoPluginNames, i18n]);
+
+    const cloudKnownNames = useMemo(() => {
+        const names = new Set<string>();
+        for (const list of Object.values(repoPluginNames)) {
+            for (const name of list) names.add(name);
+        }
+        return names;
+    }, [repoPluginNames]);
+
+    const openCloudForPlugin = useCallback((pluginName: string) => {
+        const cloudState = useCloudStore.getState();
+        // 先写入搜索词并切到社区页，再激活云端视图
+        cloudState.setCommunitySearchQuery(pluginName);
+        cloudState.setCurrentTab('community');
+        i18n.view.activateView(CLOUD_VIEW_TYPE);
+    }, [i18n]);
 
     const sortOptions = useMemo(() => [
         { key: '0', label: t('Common.Data.SortAsc') },
@@ -183,11 +209,12 @@ export const PluginManager: React.FC<PluginManagerProps> = ({ i18n, close }) => 
                 isTranslated,
                 translationVersion,
                 supportedVersion,
-                cloudEntries: cloudManifest.filter(entry => entry.plugin === plugin.id && entry.type === 'plugin')
+                cloudEntries: cloudManifest.filter(entry => entry.plugin === plugin.id && entry.type === 'plugin'),
+                cloudAvailable: cloudKnownNames.has(plugin.id.toLowerCase()) || cloudKnownNames.has(plugin.name.toLowerCase())
             };
         }
         return stats;
-    }, [plugins, i18n, refreshKey, sourceTick, t, checkIsTranslated, cloudManifest]);
+    }, [plugins, i18n, refreshKey, sourceTick, t, checkIsTranslated, cloudManifest, cloudKnownNames]);
 
     const displayPlugins = useMemo(() => {
         let result = [...plugins];
@@ -405,6 +432,7 @@ export const PluginManager: React.FC<PluginManagerProps> = ({ i18n, close }) => 
                                             refreshParent={handleRefresh}
                                             close={close}
                                             viewMode={viewMode}
+                                            openCloud={openCloudForPlugin}
                                         />
                                     ))}
                                 </div>

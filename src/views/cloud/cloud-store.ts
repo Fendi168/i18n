@@ -46,6 +46,12 @@ interface CloudState {
 
     // ===== 社区插件名索引（用于通过插件名称搜索仓库）=====
     repoPluginNames: Record<string, string[]>;
+    // 社区搜索关键词（供插件管理点击「云端有译文」跳转时复用）
+    communitySearchQuery: string;
+    // 仓库资源页的搜索关键词（社区卡片「搜xxx」跳转时复用）
+    exploreFilterQuery: string;
+    // 插件名索引是否正在加载
+    pluginIndexLoading: boolean;
 
     // ===== 上传页状态 =====
     uploadForm: UploadFormData;
@@ -115,6 +121,10 @@ interface CloudActions {
     setTargetManifest: (manifest: ManifestEntry[]) => void;
     setSavedRepos: (repos: string[]) => void;
     setRepoPluginNames: (names: Record<string, string[]>) => void;
+    setCommunitySearchQuery: (query: string) => void;
+    setExploreFilterQuery: (query: string) => void;
+    // 按需加载所有社区仓库的 metadata.json，构建插件名索引
+    ensureRepoPluginNames: (i18n: any) => Promise<void>;
     setTargetRepoReadme: (content: string | null) => void;
     addSavedRepo: (address: string) => void;
     removeSavedRepo: (address: string) => void;
@@ -207,6 +217,9 @@ const initialState: CloudState = {
     savedRepos: [],
     targetRepoReadme: null,
     repoPluginNames: {},
+    communitySearchQuery: '',
+    exploreFilterQuery: '',
+    pluginIndexLoading: false,
 
     uploadType: 'plugin',
     uploadForm: {
@@ -282,6 +295,57 @@ const useCloudStoreBase = create<CloudState & CloudActions>()((set, get) => ({
     setTargetRepoReadme: (targetRepoReadme) => set({ targetRepoReadme }),
     setSavedRepos: (savedRepos) => set({ savedRepos }),
     setRepoPluginNames: (names) => set((state) => ({ repoPluginNames: { ...state.repoPluginNames, ...names } })),
+    setCommunitySearchQuery: (communitySearchQuery) => set({ communitySearchQuery }),
+    setExploreFilterQuery: (exploreFilterQuery) => set({ exploreFilterQuery }),
+    ensureRepoPluginNames: async (i18n) => {
+        const { pluginIndexLoading, repoPluginNames, communityRegistry, fetchCommunityRegistry } = get();
+        if (pluginIndexLoading) return;
+
+        // 索引依赖社区仓库列表，未加载时先拉取
+        let registry = communityRegistry;
+        if (registry.length === 0) {
+            await fetchCommunityRegistry(i18n);
+            registry = get().communityRegistry;
+        }
+
+        const pending = registry
+            .map((item) => item.repoAddress)
+            .filter((address) => !repoPluginNames[address]);
+        if (pending.length === 0) return;
+
+        set({ pluginIndexLoading: true });
+
+        const concurrency = 4;
+        let cursor = 0;
+
+        const worker = async () => {
+            while (cursor < pending.length) {
+                const address = pending[cursor++];
+                const [owner, repo] = address.split('/');
+                if (!owner || !repo) continue;
+                try {
+                    const res = await i18n.api.github.getFileContentWithFallback(owner, repo, 'metadata.json');
+                    const raw = typeof res.data === 'string' ? JSON.parse(res.data) : res.data;
+                    if (res.state && Array.isArray(raw)) {
+                        const names = new Set<string>();
+                        for (const entry of raw) {
+                            if (typeof entry?.plugin === 'string' && entry.plugin) names.add(entry.plugin.toLowerCase());
+                            if (typeof entry?.title === 'string' && entry.title) names.add(entry.title.toLowerCase());
+                        }
+                        get().setRepoPluginNames({ [address]: Array.from(names) });
+                    }
+                } catch (e) {
+                    console.warn(`Failed to index plugin names for ${address}`, e);
+                }
+            }
+        };
+
+        try {
+            await Promise.all(Array.from({ length: Math.min(concurrency, pending.length) }, () => worker()));
+        } finally {
+            set({ pluginIndexLoading: false });
+        }
+    },
     addSavedRepo: (address) => set((state) => ({ savedRepos: Array.from(new Set([...state.savedRepos, address])) })),
     removeSavedRepo: (address) => set((state) => ({ savedRepos: state.savedRepos.filter(a => a !== address) })),
 

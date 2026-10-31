@@ -54,6 +54,8 @@ export interface PluginItemData {
     translationVersion?: string;
     supportedVersion?: string;
     cloudEntries?: any[];
+    // 云端是否存在该插件的译文
+    cloudAvailable?: boolean;
 }
 
 interface PluginItemProps {
@@ -66,9 +68,11 @@ interface PluginItemProps {
     reloadPlugin: (id: string) => Promise<boolean>;
     close: () => void;
     viewMode: 'list' | 'grid';
+    // 跳转云端译文中心并按插件名搜索
+    openCloud?: (pluginName: string) => void;
 }
 
-export const PluginItem: React.FC<PluginItemProps> = React.memo(({ plugin, i18n, settings, isEnabled, data, reloadPlugin, refreshParent, close, viewMode }) => {
+export const PluginItem: React.FC<PluginItemProps> = React.memo(({ plugin, i18n, settings, isEnabled, data, reloadPlugin, refreshParent, close, viewMode, openCloud }) => {
     const { t } = useTranslation();
     const [extracting, setExtracting] = useState(false);
     const [replacing, setReplacing] = useState(false);
@@ -78,7 +82,7 @@ export const PluginItem: React.FC<PluginItemProps> = React.memo(({ plugin, i18n,
     const {
         statusColor, statusText, statusDesc, isLangDoc, langDoc, pluginDir,
         sources, activeSourceId, translationFormatMark, mainDoc, manifestDoc, isApplied,
-        isTranslated, translationVersion, supportedVersion, cloudEntries
+        isTranslated, translationVersion, supportedVersion, cloudEntries, cloudAvailable
     } = data;
 
     const sourceManager = i18n.sourceManager;
@@ -333,7 +337,10 @@ export const PluginItem: React.FC<PluginItemProps> = React.memo(({ plugin, i18n,
 
     if (viewMode === 'grid') {
         return (
-            <div className="group relative flex flex-col h-[200px] border rounded-none bg-card/85 text-card-foreground shadow-xs hover:shadow-lg hover:bg-muted/30 transition-all duration-300 overflow-hidden border-border/60 backdrop-blur-md">
+            <div
+                onClick={cloudAvailable ? () => openCloud?.(plugin.name) : undefined}
+                className={cn("group relative flex flex-col h-[200px] border rounded-none bg-card/85 text-card-foreground shadow-xs hover:shadow-lg hover:bg-muted/30 transition-all duration-300 overflow-hidden border-border/60 backdrop-blur-md", cloudAvailable && "cursor-pointer")}
+            >
                 {/* Side Status Accent */}
                 {/* Side Status Accent */}
                 <div className={cn("absolute left-0 top-0 bottom-0 w-[4px] transition-colors duration-300 z-10 bg-opacity-100", statusColor)} />
@@ -348,6 +355,11 @@ export const PluginItem: React.FC<PluginItemProps> = React.memo(({ plugin, i18n,
                                     <span className="text-[10px] text-primary/80 font-bold bg-primary/5 border border-primary/10 px-1.5 py-0.5 rounded-none">
                                         v{translationVersion}
                                     </span>
+                                )}
+                                {cloudAvailable && (
+                                    <Badge variant="outline" className="text-[9px] h-4 px-1.5 border-none bg-sky-500/10 text-sky-600 dark:text-sky-400 shrink-0" title={t('Manager.Plugins.Labels.CloudAvailableHint')}>
+                                        {t('Manager.Plugins.Labels.CloudAvailable')}
+                                    </Badge>
                                 )}
                             </div>
                         </div>
@@ -367,7 +379,7 @@ export const PluginItem: React.FC<PluginItemProps> = React.memo(({ plugin, i18n,
                     >
                         {plugin.description || t('Common.Status.Unknown')}
                     </div>
-                    <div className="flex flex-col gap-3 mt-auto pt-3 border-t border-border/30">
+                    <div className="flex flex-col gap-3 mt-auto pt-3 border-t border-border/30" onClick={(e) => e.stopPropagation()}>
                         <div className="flex items-center justify-between gap-2">
                             {sources.length > 0 ? (
                                 <Select
@@ -504,7 +516,10 @@ export const PluginItem: React.FC<PluginItemProps> = React.memo(({ plugin, i18n,
     }
 
     return (
-        <div className="group relative border rounded-none bg-card/75 text-card-foreground shadow-xs hover:shadow-md hover:bg-muted/20 transition-all duration-300 px-4 py-1.5 w-full border-border/50 overflow-hidden backdrop-blur-md">
+        <div
+            onClick={cloudAvailable ? () => openCloud?.(plugin.name) : undefined}
+            className={cn("group relative border rounded-none bg-card/75 text-card-foreground shadow-xs hover:shadow-md hover:bg-muted/20 transition-all duration-300 px-4 py-1.5 w-full border-border/50 overflow-hidden backdrop-blur-md", cloudAvailable && "cursor-pointer")}
+        >
             {/* Side Status Accent */}
             {/* Side Status Accent */}
             <div className={cn("absolute left-0 top-0 bottom-0 w-[3px] transition-colors duration-300 z-10 bg-opacity-100", statusColor)} />
@@ -523,9 +538,14 @@ export const PluginItem: React.FC<PluginItemProps> = React.memo(({ plugin, i18n,
                             v{translationVersion}
                         </span>
                     )}
+                    {cloudAvailable && (
+                        <Badge variant="outline" className="text-[9px] h-4 px-1.5 border-none bg-sky-500/10 text-sky-600 dark:text-sky-400 shrink-0" title={t('Manager.Plugins.Labels.CloudAvailableHint')}>
+                            {t('Manager.Plugins.Labels.CloudAvailable')}
+                        </Badge>
+                    )}
                 </div>
 
-                <div className="flex items-center gap-2.5 ml-auto shrink-0 pl-2">
+                <div className="flex items-center gap-2.5 ml-auto shrink-0 pl-2" onClick={(e) => e.stopPropagation()}>
                     {sources.length > 0 && (
                         <Select
                             value={activeSourceId ?? undefined}
